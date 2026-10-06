@@ -1,0 +1,22 @@
+# Bí mật
+.env
+
+# Đầu ra lớn
+clips/
+voice/
+**/clips/
+**/voice/
+renders/
+
+# Asset lớn (giữ .gitkeep; ảnh tham chiếu png/jpg nhỏ vẫn được commit)
+assets/**/*.mp4
+assets/**/*.mov
+assets/**/*.wav
+assets/**/*.mp3
+assets/**/*.psd
+assets/**/*.zip
+
+# Python
+__pycache__/
+*.pyc
+.venv/

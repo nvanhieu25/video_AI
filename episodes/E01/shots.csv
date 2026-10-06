@@ -1,0 +1,4 @@
+shot,scene,hanh_dong,camera,nhan_vat,boi_canh,thoai,loai_shot,thoi_luong_s,prompt,prompt_lib_id,trang_thai
+1,1,Linh chậm rãi ngẩng lên nhìn thẳng ống kính,push-in chậm,Linh,phong_khach,,AI,4,"She slowly lifts her gaze toward the camera, lips pressed tight, breathing heavily. Slow push-in. Soft window light from the left. Keep face and outfit consistent with the reference.",PL001,nhap
+2,1,Linh đặt cốc xuống bàn rồi quay người bước ra cửa,static,Linh,phong_khach,Em không chờ nữa đâu.,AI+lipsync,5,"She sets the cup down on the table, then turns and walks quickly toward the door, jaw clenched. Static shot. Warm evening light. Keep face and outfit consistent with the reference.",,nhap
+3,1,Tay cầm lọ RICHESSE xoay chậm,static,,ban_trang_diem,,san_pham_that,3,,,nhap
