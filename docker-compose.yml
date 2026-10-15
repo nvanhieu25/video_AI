@@ -1,0 +1,38 @@
+services:
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres/richesse
+      MEDIA_ROOT: /media
+    volumes:
+      - media:/media
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+  worker:
+    build: .
+    command: ["python", "-m", "app.worker"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres/richesse
+      MEDIA_ROOT: /media
+    volumes:
+      - media:/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: richesse
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d richesse"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  media:

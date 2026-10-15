@@ -31,6 +31,38 @@
 
 ---
 
+## Repository audit — 2026-10-16
+
+**Current position:** Task 1 has been started locally but is not yet a usable or committed baseline. The following files are present only as untracked work: `pyproject.toml`, `uv.lock`, `app/`, `tests/`, `Dockerfile`, and `docker-compose.yml`. No implementation for Tasks 2–10 exists yet.
+
+**Verified:** the two intended Task-1 tests pass with an explicit database URL when invoked as `DATABASE_URL=sqlite:///test.db uv run python -m pytest tests/test_app.py -v`.
+
+**Blocking gaps before Task 2:**
+
+- The plan's required command, `uv run pytest tests/test_app.py -v`, fails during collection with `ModuleNotFoundError: app`; make the application importable under the standard pytest invocation.
+- `Settings` reads `.env`, which conflicts with the stated environment-only configuration policy. Decide and document one configuration contract, and make the test suite independent of any developer `.env` file.
+- `README.md`, `.env.example`, `.gitignore`, and `CLAUDE.md` still document the retired CSV/Dreamina workflow. `.env.example` lacks `DATABASE_URL`; the Docker image does not install from the lockfile; and Compose has no worker/media-volume design yet.
+- Baseline checks are not clean: Ruff reports legacy `scripts/future_api/_common.py` is executable without a shebang, and mypy reports `app/main.py` constructs `Settings` without the required `database_url` argument.
+- Preserve the existing RICHESSE rules during migration: product close-ups use approved real media, AI must not generate logo/text/labels/packaging, and spoken product claims must be explicitly approved. These become recipe/domain validation fixtures in Tasks 2 and 10.
+
+### Task 0: Stabilize and commit the existing scaffold
+
+**Purpose:** turn the current untracked starting point into a reproducible baseline before introducing domain or persistence code. This prevents subsequent work from being built on a test command that differs between developer machines.
+
+**Files:**
+- Modify: `pyproject.toml`, `app/main.py`, `app/core/settings.py`, `tests/test_app.py`, `Dockerfile`, `docker-compose.yml`, `README.md`, `.env.example`, `.gitignore`, `CLAUDE.md`
+- Add to version control: current untracked Task-1 files and `uv.lock`
+
+- [ ] **Step 1: Write a regression test that executes under `uv run pytest` without relying on a developer `.env`; keep the missing-`DATABASE_URL` validation test.**
+- [ ] **Step 2: Configure the project/package path and application factory so imports and settings behave consistently in tests, Uvicorn, and Docker.**
+- [ ] **Step 3: Align configuration and deployment files:** document every non-secret setting, add a non-secret `DATABASE_URL` development example, install from `uv.lock`, and define the intended database/media/worker service boundaries without adding credentials.
+- [ ] **Step 4: Rewrite the short operator and agent introduction to identify the autonomous-base migration; retain the legacy policies only as migration inputs, not active operating instructions.**
+- [ ] **Step 5: Run `uv run pytest tests/test_app.py -v`, `uv run ruff check .`, and `uv run mypy app`; record clean output and commit the baseline.**
+
+**Exit criteria:** a fresh checkout can run the health test with the exact documented command; no hidden `.env` is required; the active documentation no longer directs operators to produce CSV/Dreamina handoffs; and the resulting baseline is committed before Task 2 begins.
+
+---
+
 ## File Structure
 
 ```text

@@ -1,14 +1,18 @@
-# Bí mật
+# Secrets
 .env
 
-# Đầu ra lớn
+# Local databases and generated media
+*.db
+media/
+
+# Large outputs
 clips/
 voice/
 **/clips/
 **/voice/
 renders/
 
-# Asset lớn (giữ .gitkeep; ảnh tham chiếu png/jpg nhỏ vẫn được commit)
+# Large assets (keep .gitkeep; small reference png/jpg may be committed)
 assets/**/*.mp4
 assets/**/*.mov
 assets/**/*.wav
@@ -16,7 +20,11 @@ assets/**/*.mp3
 assets/**/*.psd
 assets/**/*.zip
 
-# Python
+# Python and tool caches
 __pycache__/
 *.pyc
 .venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.superpowers/

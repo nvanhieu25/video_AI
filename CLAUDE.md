@@ -1,20 +1,17 @@
-# CLAUDE.md — Quy tắc làm việc cho agent
+# CLAUDE.md — Agent instructions
 
-Dự án: phim ngắn AI nhiều tập (9:16, TikTok/Reels) có đặt sản phẩm RICHESSE.
-Giai đoạn hiện tại: **Phương án A** (tự động phần chữ). Phương án B (`scripts/future_api/`) chỉ là khung — chưa được bật.
+Project: richesse-video, an internal autonomous pipeline that renders a 9:16 MP4 from a submitted brief. The CSV/Dreamina handoff workflow is retired. Do not extend `scripts/`, `templates/`, or prompt-library tooling as the product path.
 
-## Quy tắc bắt buộc
-- Thứ tự bắt buộc: kịch bản → shot list → bảng thoại/voice (chốt thời lượng) → prompt. Voice luôn trước tạo clip.
-- Cổng người duyệt: kịch bản, khóa nhân vật, storyboard, clip, bản cuối. Không tự bỏ qua cổng.
-- Mỗi nhân vật chỉ một nguồn giọng (MiniMax voice_id ghi trong bible).
-- Không bao giờ để AI tạo logo/chữ trên sản phẩm RICHESSE.
-- Không gọi API trả phí khi chưa được yêu cầu rõ; luôn tôn trọng BUDGET_PER_EPISODE_USD và MAX_RETRIES_PER_SHOT.
-- Không ghi API key vào code hay chat; chỉ đọc từ .env.
-- Nếu một tác vụ chạy quá 10 phút mà chưa có kết quả rõ ràng: dừng, báo tình trạng và hỏi tôi có tiếp tục không.
+## Active rules
 
-## Quy ước kỹ thuật
-- Chỉ dùng thư viện chuẩn Python (csv, pathlib, ...). Không cài thư viện ngoài khi chưa hỏi.
-- CSV đọc bằng `utf-8-sig` (chịu được file lưu từ Excel), ghi bằng `utf-8`.
-- Viết prompt video theo `skills/prompt_writer.md`; chạy `scripts/validate_shots.py` sau mỗi lần sửa `shots.csv`.
-- Shot `san_pham_that` dùng ảnh/video thật trong `assets/product/` — không viết prompt AI cho shot này (xem `bible/product_rules.md`).
-- Ghi mọi lần tạo clip vào `episodes/EXX/log.csv`.
+- A job must not wait for human approval between submission and delivery. Use bounded retries and explicit fallbacks.
+- Do not call paid APIs or require live credentials. Provider adapters stay unconfigured unless an operator explicitly supplies server-side secrets.
+- Never write API keys into code, chat, the database, logs, prompts, or commits. The database stores credential aliases only.
+- Product close-ups use approved real media. AI must not generate RICHESSE logo, text, labels, or packaging. Spoken product claims must be explicitly approved.
+- Provider-specific requests belong only in adapter modules.
+- Do not hard-code a price table as a billing source. Record actual provider usage when a response includes it.
+- Persist input hashes, recipe version, prompt/template version, provider parameters, lineage, task IDs, and costs.
+
+## Legacy policy, retained as migration input
+
+The old manual gates (script, character lock, storyboard, clip, final cut) are not runtime gates. The same brand constraints above are the inputs to recipe and domain validation.

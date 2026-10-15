@@ -1,0 +1,1 @@
+"""Richesse Video application package."""
