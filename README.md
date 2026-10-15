@@ -1,6 +1,6 @@
 # richesse-video
 
-Private internal tool that turns one Vietnamese creative brief into a vertical MP4. This repository is migrating from the retired CSV/Dreamina handoff workflow to an autonomous base: submit a brief, and a worker renders the video without waiting for approval during generation.
+Private internal tool that turns one Vietnamese creative brief into a vertical MP4. Submit a brief, and a worker renders the video without waiting for approval during generation.
 
 The human reviews and publishes only after delivery.
 
@@ -45,4 +45,4 @@ The previous manual workflow is retired as the product process. These product ru
 - AI must not generate RICHESSE logo, text, labels, or packaging.
 - Spoken product claims must be explicitly approved.
 
-Those rules belong in versioned recipes and tests. Do not produce `shots.csv` handoffs or create clips by hand as the delivery path.
+Those rules belong in versioned recipes and tests. The worker delivers the MP4; there is no manual clip handoff.

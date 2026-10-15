@@ -27,6 +27,7 @@ class Recipe(BaseModel):
     default_budget_cap: str | None = None
     product_closeup_requires_approved_asset: bool = True
     forbid_ai_branding: list[str] = []
+    forbidden_claims: list[str] = []
     approved_claims: list[str] = []
 
     @model_validator(mode="after")

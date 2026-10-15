@@ -26,4 +26,10 @@ forbid_ai_branding:
   - text
   - label
   - packaging
+forbidden_claims:
+  - chữa bệnh
+  - điều trị
+  - "100%"
+  - vĩnh viễn
+  - ngay lập tức
 approved_claims: []

@@ -1,6 +1,6 @@
 # CLAUDE.md — Agent instructions
 
-Project: richesse-video, an internal autonomous pipeline that renders a 9:16 MP4 from a submitted brief. The CSV/Dreamina handoff workflow is retired. Do not extend `scripts/`, `templates/`, or prompt-library tooling as the product path.
+Project: richesse-video, an internal autonomous pipeline that renders a 9:16 MP4 from a submitted brief. Operator instructions describe only this pipeline.
 
 ## Active rules
 

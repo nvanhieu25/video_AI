@@ -86,6 +86,14 @@ def test_product_closeup_requires_approved_real_asset():
     approved.validate_for(recipe)
 
 
+def test_unapproved_product_claim_is_rejected():
+    recipe = load_recipe(RECIPE)
+    plan = make_plan(storyboards=10, references=9)
+    plan.storyboards[0].shots[0].dialogue = "Sản phẩm này chữa bệnh."
+    with pytest.raises(RecipeValidationError):
+        plan.validate_for(recipe)
+
+
 def test_status_and_timeline_contracts_are_provider_neutral():
     asset = AssetRef(
         asset_id=uuid4(),

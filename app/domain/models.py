@@ -103,6 +103,11 @@ class EpisodePlan(BaseModel):
                     errors.append(
                         f"{shot.shot_id} product close-up requires an approved real asset"
                     )
+                spoken = f"{shot.prompt}\n{shot.dialogue}".casefold()
+                for claim in recipe.forbidden_claims:
+                    if claim.casefold() in spoken:
+                        errors.append(f"{shot.shot_id} uses an unapproved product claim")
+                        break
         if errors:
             raise RecipeValidationError("; ".join(errors))
 
