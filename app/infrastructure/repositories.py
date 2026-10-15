@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict
@@ -199,6 +200,32 @@ class JobRepository:
             raise KeyError((job_id, number))
         return _job_record(row)
 
+    def set_status(self, version_id: UUID, status: JobStatus) -> None:
+        self._version_row(version_id).status = status.value
+        self.session.flush()
+
+    def save_plan(self, version_id: UUID, plan: dict[str, object]) -> None:
+        self._version_row(version_id).plan = plan
+        self.session.flush()
+
+    def get_plan(self, version_id: UUID) -> dict[str, object] | None:
+        plan = self._version_row(version_id).plan
+        if plan is None:
+            return None
+        return dict(plan)
+
+    def add_spend(self, version_id: UUID, amount: str) -> str:
+        row = self._version_row(version_id)
+        row.spent = str(Decimal(row.spent) + Decimal(amount))
+        self.session.flush()
+        return row.spent
+
+    def _version_row(self, version_id: UUID) -> JobVersionRow:
+        row = self.session.get(JobVersionRow, str(version_id))
+        if row is None:
+            raise KeyError(version_id)
+        return row
+
     def record_event(self, version_id: UUID, kind: str, payload: dict[str, object]) -> UUID:
         event_id = uuid4()
         self.session.add(
@@ -224,7 +251,20 @@ class JobRepository:
             for row in rows
         ]
 
+    def list_artifacts(self, version_id: UUID) -> list[ArtifactRecord]:
+        rows = self.session.scalars(
+            select(ArtifactRow)
+            .where(ArtifactRow.version_id == str(version_id))
+            .order_by(ArtifactRow.created_at)
+        ).all()
+        return [_artifact_record(row) for row in rows]
+
     def save_artifact(self, artifact: ArtifactWrite) -> ArtifactRecord:
+        existing = self.session.scalar(
+            select(ArtifactRow).where(ArtifactRow.asset_id == str(artifact.asset_id))
+        )
+        if existing is not None:
+            return _artifact_record(existing)
         self.session.add(
             ArtifactRow(
                 id=str(uuid4()),
@@ -247,16 +287,7 @@ class JobRepository:
         row = self.session.scalar(select(ArtifactRow).where(ArtifactRow.asset_id == str(asset_id)))
         if row is None:
             raise KeyError(asset_id)
-        return ArtifactRecord(
-            asset_id=UUID(row.asset_id),
-            sha256=row.sha256,
-            uri=row.uri,
-            media_type=row.media_type,
-            origin=AssetOrigin(row.origin),
-            role=row.role,
-            lineage=dict(row.lineage),
-            cost=row.cost,
-        )
+        return _artifact_record(row)
 
     def save_attempt(self, attempt: AttemptWrite) -> AttemptRecord:
         attempt_id = uuid4()
@@ -279,6 +310,35 @@ class JobRepository:
         if stored is None:
             raise KeyError(attempt.idempotency_key)
         return stored
+
+    def update_attempt(self, idempotency_key: str, *, status: str, cost: str | None = None) -> None:
+        row = self.session.scalar(
+            select(AttemptRow).where(AttemptRow.idempotency_key == idempotency_key)
+        )
+        if row is None:
+            raise KeyError(idempotency_key)
+        row.status = status
+        if cost is not None:
+            row.cost = cost
+        self.session.flush()
+
+    def list_attempts(self, version_id: UUID) -> list[AttemptRecord]:
+        rows = self.session.scalars(
+            select(AttemptRow).where(AttemptRow.version_id == str(version_id))
+        ).all()
+        return [
+            AttemptRecord(
+                attempt_id=UUID(row.id),
+                idempotency_key=row.idempotency_key,
+                stage=row.stage,
+                target_id=row.target_id,
+                provider_alias=row.provider_alias,
+                external_task_id=row.external_task_id,
+                status=row.status,
+                cost=row.cost,
+            )
+            for row in rows
+        ]
 
     def get_attempt_by_key(self, idempotency_key: str) -> AttemptRecord | None:
         row = self.session.scalar(
@@ -332,6 +392,14 @@ class TaskRepository:
         self.session.flush()
         return task_id
 
+    def list_tasks(self, version_id: UUID) -> list[TaskRecord]:
+        rows = self.session.scalars(
+            select(TaskRow)
+            .where(TaskRow.version_id == str(version_id))
+            .order_by(TaskRow.created_at, TaskRow.id)
+        ).all()
+        return [_task_record(row) for row in rows]
+
     def claim(self, worker_id: str, now: datetime) -> TaskRecord | None:
         candidate = self.session.scalar(
             select(TaskRow)
@@ -378,6 +446,19 @@ class TaskRepository:
         if not isinstance(result, CursorResult):
             return 0
         return int(result.rowcount or 0)
+
+
+def _artifact_record(row: ArtifactRow) -> ArtifactRecord:
+    return ArtifactRecord(
+        asset_id=UUID(row.asset_id),
+        sha256=row.sha256,
+        uri=row.uri,
+        media_type=row.media_type,
+        origin=AssetOrigin(row.origin),
+        role=row.role,
+        lineage=dict(row.lineage),
+        cost=row.cost,
+    )
 
 
 def _task_record(row: TaskRow) -> TaskRecord:

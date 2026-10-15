@@ -29,6 +29,7 @@ class JobVersionRow(Base):
     budget_cap: Mapped[str | None] = mapped_column(String(32), nullable=True)
     spent: Mapped[str] = mapped_column(String(32), default="0")
     status: Mapped[str] = mapped_column(String(40))
+    plan: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
