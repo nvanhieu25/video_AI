@@ -26,6 +26,7 @@ from app.domain.recipes import Recipe, load_recipe
 from app.infrastructure.repositories import (
     ArtifactRecord,
     ArtifactWrite,
+    AttemptRecord,
     AttemptWrite,
     JobRecord,
     JobRepository,
@@ -161,6 +162,7 @@ def _run_reference(
             lineage={"stage": "reference", "storyboard_id": storyboard_id, "role": role, "fallback": True},
         )
         return
+    _reserve(services, job, recipe)
     asset = services.images.generate(
         ImageRequest(
             storyboard_id=storyboard_id,
@@ -204,6 +206,7 @@ def _run_speech(
             },
         )
         return
+    _reserve(services, job, recipe)
     spoken = services.speech.synthesize(
         SpeechRequest(shot_id=shot.shot_id, text=shot.dialogue, idempotency_key=task.idempotency_key)
     )
@@ -228,13 +231,15 @@ def _run_speech(
 
 def _run_video(services: Services, job: JobRecord, recipe: Recipe, task: TaskRecord) -> None:
     shot_id = _text(task.payload, "shot_id")
-    existing = services.jobs.get_attempt_by_key(task.idempotency_key)
-    if existing is not None and existing.external_task_id:
-        external_task_id = existing.external_task_id
-    elif not _can_generate(services, job, recipe):
-        _store_fallback_clip(services, job, task)
-        return
-    else:
+    while not _shot_has_accepted_video(services, job, shot_id):
+        pending = _pending_video_attempt(services, job, shot_id)
+        if pending is not None and pending.external_task_id is not None:
+            if _retrieve_video(services, job, task, pending.idempotency_key, pending.external_task_id):
+                return
+            continue
+        if not _can_generate(services, job, recipe):
+            _store_fallback_clip(services, job, task)
+            return
         started = _video_attempts(services, job, shot_id)
         action = RetryPolicy(recipe.max_attempts_per_shot).next_action(
             attempts_started=started, last_hard_pass=False
@@ -242,57 +247,34 @@ def _run_video(services: Services, job: JobRecord, recipe: Recipe, task: TaskRec
         if action == RetryAction.fallback:
             _store_fallback_clip(services, job, task)
             return
+        attempt_key = task.idempotency_key if started == 0 else f"{task.idempotency_key}:{started}"
         external_task_id = services.video.submit(
             VideoRequest(
-                shot_id=_text(task.payload, "shot_id"),
+                shot_id=shot_id,
                 prompt=_text(task.payload, "prompt"),
                 duration_seconds=float(_text(task.payload, "duration_seconds")),
-                idempotency_key=task.idempotency_key,
+                idempotency_key=attempt_key,
             )
         )
         services.jobs.save_attempt(
             AttemptWrite(
                 version_id=job.version_id,
-                idempotency_key=task.idempotency_key,
+                idempotency_key=attempt_key,
                 stage="video",
-                target_id=_text(task.payload, "shot_id"),
+                target_id=shot_id,
                 provider_alias="fake",
                 external_task_id=external_task_id,
                 status="submitted",
                 cost="0",
             )
         )
+        _reserve(services, job, recipe)
         services.jobs.record_event(
             job.version_id,
             "video.submitted",
-            {"external_task_id": external_task_id, "shot_id": _text(task.payload, "shot_id")},
+            {"external_task_id": external_task_id, "shot_id": shot_id},
         )
         services.session.commit()
-    if services.video.poll(external_task_id) != "succeeded":
-        raise RuntimeError("video attempt is not ready")
-    asset = services.video.retrieve(external_task_id)
-    evaluation = services.evaluator.evaluate(asset, _text(task.payload, "prompt"))
-    services.jobs.save_artifact(
-        ArtifactWrite(
-            version_id=job.version_id,
-            asset_id=asset.asset_id,
-            sha256=asset.sha256,
-            uri=asset.uri,
-            media_type=asset.media_type,
-            origin=asset.origin,
-            role="clip",
-            lineage={
-                "stage": "video",
-                "shot_id": _text(task.payload, "shot_id"),
-                "storyboard_id": _text(task.payload, "storyboard_id"),
-                "external_task_id": external_task_id,
-                "hard_pass": evaluation.hard_pass,
-                "soft_score": evaluation.soft_score,
-            },
-            cost="0",
-        )
-    )
-    services.jobs.update_attempt(task.idempotency_key, status="retrieved")
 
 
 def _run_render(services: Services, job: JobRecord, plan: EpisodePlan) -> None:
@@ -375,6 +357,75 @@ def _timeline_inputs(
             voices[shot.shot_id] = duration
             sources[chosen.asset_id] = services.store.get_path(chosen.asset_id)
     return selections, voices, sources
+
+
+def _retrieve_video(
+    services: Services,
+    job: JobRecord,
+    task: TaskRecord,
+    attempt_key: str,
+    external_task_id: str,
+) -> bool:
+    if services.video.poll(external_task_id) != "succeeded":
+        raise RuntimeError("video attempt is not ready")
+    asset = services.video.retrieve(external_task_id)
+    evaluation = services.evaluator.evaluate(asset, _text(task.payload, "prompt"))
+    services.jobs.save_artifact(
+        ArtifactWrite(
+            version_id=job.version_id,
+            asset_id=asset.asset_id,
+            sha256=asset.sha256,
+            uri=asset.uri,
+            media_type=asset.media_type,
+            origin=asset.origin,
+            role="clip",
+            lineage={
+                "stage": "video",
+                "shot_id": _text(task.payload, "shot_id"),
+                "storyboard_id": _text(task.payload, "storyboard_id"),
+                "external_task_id": external_task_id,
+                "hard_pass": evaluation.hard_pass,
+                "soft_score": evaluation.soft_score,
+            },
+            cost="0",
+        )
+    )
+    services.jobs.update_attempt(attempt_key, status="retrieved")
+    return evaluation.hard_pass
+
+
+def _pending_video_attempt(
+    services: Services, job: JobRecord, shot_id: str
+) -> AttemptRecord | None:
+    pending = [
+        attempt
+        for attempt in services.jobs.list_attempts(job.version_id)
+        if attempt.stage == "video"
+        and attempt.target_id == shot_id
+        and attempt.status == "submitted"
+        and attempt.external_task_id
+    ]
+    return pending[-1] if pending else None
+
+
+def _shot_has_accepted_video(services: Services, job: JobRecord, shot_id: str) -> bool:
+    return any(
+        _accepted_video(artifact, shot_id)
+        for artifact in services.jobs.list_artifacts(job.version_id)
+    )
+
+
+def _accepted_video(artifact: ArtifactRecord, shot_id: str | None = None) -> bool:
+    lineage = artifact.lineage
+    if lineage.get("stage") != "video":
+        return False
+    if shot_id is not None and lineage.get("shot_id") != shot_id:
+        return False
+    return lineage.get("hard_pass") is True or lineage.get("fallback") is True
+
+
+def _reserve(services: Services, job: JobRecord, recipe: Recipe) -> None:
+    services.jobs.add_spend(job.version_id, recipe.attempt_estimate)
 
 
 def _can_generate(services: Services, job: JobRecord, recipe: Recipe) -> bool:
@@ -506,8 +557,8 @@ def _enqueue_ready(services: Services, job: JobRecord, recipe: Recipe, plan: Epi
                 },
             )
     shots = [shot.shot_id for board in plan.storyboards for shot in board.shots]
-    rendered = [item for item in artifacts if item.lineage.get("stage") == "video"]
-    if len(rendered) >= len(shots):
+    accepted = {item.lineage.get("shot_id") for item in artifacts if _accepted_video(item)}
+    if len(accepted) >= len(shots):
         _enqueue(
             services,
             job,

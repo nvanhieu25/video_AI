@@ -52,3 +52,31 @@ def test_cap_exhaustion_delivers_without_a_new_generation(services):
     job = JobRepository(bundle.session).get_job(job_id)
     assert job.status == JobStatus.delivered_with_flags
     assert JobRepository(bundle.session).list_attempts(job.version_id) == []
+
+
+def test_one_estimate_reserves_the_only_paid_attempt(services):
+    bundle, video = services
+    video.interrupt = False
+    job_id = submit_job(
+        SubmitJob(
+            brief="Hai người gặp lại dưới mưa.",
+            recipe_id="drama_vertical_120s_v1",
+            budget_cap="0.01",
+        ),
+        services=bundle,
+    )
+    for _ in range(400):
+        if run_once("worker-a", services=bundle) == 0:
+            break
+    jobs = JobRepository(bundle.session)
+    job = jobs.get_job(job_id)
+    paid = [
+        artifact
+        for artifact in jobs.list_artifacts(job.version_id)
+        if artifact.lineage.get("stage") in {"reference", "speech", "video"}
+        and artifact.lineage.get("fallback") is not True
+    ]
+    assert job.spent == "0.01"
+    assert len(paid) == 1
+    assert video.submitted == []
+    assert job.status == JobStatus.delivered_with_flags
