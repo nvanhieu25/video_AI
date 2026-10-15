@@ -1,0 +1,29 @@
+recipe_id: drama_vertical_120s_v1
+aspect_ratio: "9:16"
+target_duration_seconds: 120
+storyboard_min: 10
+storyboard_max: 12
+shots_per_storyboard_min: 1
+shots_per_storyboard_max: 2
+reference_count: 9
+reference_roles:
+  - character
+  - wardrobe
+  - location
+  - lighting
+  - prop
+  - prop_secondary
+  - product
+  - mood
+  - continuity
+resolution: "720p"
+fallback: reference_image_motion
+max_attempts_per_shot: 2
+default_budget_cap: "5.00"
+product_closeup_requires_approved_asset: true
+forbid_ai_branding:
+  - logo
+  - text
+  - label
+  - packaging
+approved_claims: []
