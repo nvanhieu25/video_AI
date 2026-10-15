@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Kết quả{% endblock %}
+{% block body %}
+<h1>Kết quả</h1>
+<p>Trạng thái: {{ job.status.value }}</p>
+{% if final_asset_id %}
+<p><a href="/jobs/{{ job.job_id }}/artifacts/{{ final_asset_id }}">final.mp4</a></p>
+{% endif %}
+{% endblock %}

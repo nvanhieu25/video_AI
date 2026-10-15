@@ -1,0 +1,6 @@
+<p
+  id="job-status"
+  hx-get="/jobs/{{ job.job_id }}/status"
+  hx-trigger="every 2s"
+  hx-swap="outerHTML"
+>{{ job.status.value }}</p>

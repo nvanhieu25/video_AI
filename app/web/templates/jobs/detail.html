@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Job {{ job.version_number }}{% endblock %}
+{% block body %}
+<h1>Job</h1>
+<p>{{ job.brief }}</p>
+<p>Recipe <span>{{ job.recipe_id }}</span> · version {{ job.version_number }}</p>
+{% include "jobs/status.html" %}
+{% if final_asset_id %}
+<p><a href="/jobs/{{ job.job_id }}/artifacts/{{ final_asset_id }}">Tải final.mp4</a></p>
+{% endif %}
+<form method="post" action="/jobs/{{ job.job_id }}/reruns">
+  <label for="storyboard_ids">Storyboard rerun</label>
+  <input id="storyboard_ids" name="storyboard_ids" value="">
+  <button type="submit">Tạo phiên bản mới</button>
+</form>
+{% endblock %}

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Video mới{% endblock %}
+{% block body %}
+<h1>Video mới</h1>
+<form method="post" action="/jobs">
+  <label for="brief">Brief</label>
+  <textarea id="brief" name="brief" required maxlength="4000"></textarea>
+  <label for="recipe_id">Recipe</label>
+  <input id="recipe_id" name="recipe_id" value="drama_vertical_120s_v1" required>
+  <label for="approved_asset_ids">Approved asset IDs</label>
+  <input id="approved_asset_ids" name="approved_asset_ids" value="">
+  <label for="budget_cap">Budget cap</label>
+  <input id="budget_cap" name="budget_cap" inputmode="decimal">
+  <button type="submit">Tạo video</button>
+</form>
+{% endblock %}

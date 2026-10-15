@@ -1,0 +1,49 @@
+:root {
+  color: #1c1917;
+  background: #faf7f2;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+body {
+  margin: 0 auto;
+  max-width: 40rem;
+  padding: 1.5rem;
+  line-height: 1.5;
+}
+
+header a,
+main a {
+  color: #7c2d12;
+}
+
+label,
+textarea,
+input,
+button {
+  display: block;
+  width: 100%;
+  margin: 0.4rem 0 0.8rem;
+}
+
+textarea,
+input,
+button {
+  font: inherit;
+}
+
+button {
+  width: auto;
+  background: #7c2d12;
+  color: #fffaf5;
+  border: 0;
+  padding: 0.5rem 0.9rem;
+}
+
+textarea {
+  min-height: 8rem;
+}
+
+:focus-visible {
+  outline: 3px solid #b45309;
+  outline-offset: 2px;
+}
