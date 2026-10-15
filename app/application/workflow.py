@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.application.commands import SubmitJob
 from app.application.policy import BudgetPolicy, RetryAction, RetryPolicy
-from app.application.qc import Candidate, select_candidate
+from app.application.qc import Candidate, CandidateSelection, select_candidate
 from app.domain.models import AssetOrigin, EpisodePlan, JobStatus, Shot, Storyboard
 from app.domain.ports import (
     ImageGenerator,
@@ -32,6 +32,8 @@ from app.infrastructure.repositories import (
     TaskRepository,
 )
 from app.infrastructure.storage import ArtifactStore
+from app.rendering.ffmpeg import FfmpegRenderer
+from app.rendering.timeline import build_timeline
 
 RECIPES = Path(__file__).resolve().parents[1] / "recipes"
 
@@ -294,28 +296,79 @@ def _run_video(services: Services, job: JobRecord, recipe: Recipe, task: TaskRec
 
 def _run_render(services: Services, job: JobRecord, plan: EpisodePlan) -> None:
     services.jobs.set_status(job.version_id, JobStatus.rendering)
-    payload = json.dumps(
-        {"storyboards": [board.storyboard_id for board in plan.storyboards]},
-        sort_keys=True,
-    ).encode()
-    asset = services.store.put_bytes(payload, "video/mp4", AssetOrigin.generated, role="final")
-    services.jobs.save_artifact(
-        ArtifactWrite(
-            version_id=job.version_id,
-            asset_id=asset.asset_id,
-            sha256=asset.sha256,
-            uri=asset.uri,
-            media_type=asset.media_type,
-            origin=asset.origin,
-            role="final",
-            lineage={"stage": "render"},
-            cost="0",
-        )
+    selections, voices, sources = _timeline_inputs(services, job, plan)
+    timeline = build_timeline(plan, selections, voices)
+    output_dir = services.store.root / "renders" / str(job.version_id)
+    rendered = FfmpegRenderer().render(timeline, output_dir, sources)
+    _store_asset(
+        services,
+        job,
+        data=rendered.video_path.read_bytes(),
+        media_type="video/mp4",
+        origin=AssetOrigin.generated,
+        role="final",
+        lineage={"stage": "render", "kind": "mp4"},
+    )
+    _store_asset(
+        services,
+        job,
+        data=rendered.srt_path.read_bytes(),
+        media_type="application/x-subrip",
+        origin=AssetOrigin.generated,
+        role="captions",
+        lineage={"stage": "render", "kind": "srt"},
+    )
+    _store_asset(
+        services,
+        job,
+        data=rendered.manifest_path.read_bytes(),
+        media_type="application/json",
+        origin=AssetOrigin.generated,
+        role="manifest",
+        lineage={"stage": "render", "kind": "timeline"},
     )
     flagged = _timeline_has_flags(services, job, plan)
     status = JobStatus.delivered_with_flags if flagged else JobStatus.delivered
     services.jobs.set_status(job.version_id, status)
     services.jobs.record_event(job.version_id, "job.delivered", {"status": status.value})
+
+
+def _timeline_inputs(
+    services: Services, job: JobRecord, plan: EpisodePlan
+) -> tuple[dict[str, CandidateSelection], dict[str, float], dict[UUID, Path]]:
+    artifacts = services.jobs.list_artifacts(job.version_id)
+    selections: dict[str, CandidateSelection] = {}
+    voices: dict[str, float] = {}
+    sources: dict[UUID, Path] = {}
+    for board in plan.storyboards:
+        for shot in board.shots:
+            clips = [
+                artifact
+                for artifact in artifacts
+                if artifact.lineage.get("stage") == "video"
+                and artifact.lineage.get("shot_id") == shot.shot_id
+            ]
+            chosen = select_candidate(
+                [
+                    Candidate(
+                        shot_id=shot.shot_id,
+                        asset_id=artifact.asset_id,
+                        hard_pass=_as_bool(artifact.lineage.get("hard_pass")),
+                        soft_score=_as_float(artifact.lineage.get("soft_score")),
+                        fallback=_as_bool(artifact.lineage.get("fallback")),
+                    )
+                    for artifact in clips
+                ]
+            )
+            speech = _find_lineage(artifacts, stage="speech", shot_id=shot.shot_id)
+            duration = 1.0
+            if speech is not None:
+                raw = speech.get("duration_seconds", "1.00")
+                duration = float(raw) if isinstance(raw, str | int | float) and not isinstance(raw, bool) else 1.0
+            selections[shot.shot_id] = chosen
+            voices[shot.shot_id] = duration
+            sources[chosen.asset_id] = services.store.get_path(chosen.asset_id)
+    return selections, voices, sources
 
 
 def _can_generate(services: Services, job: JobRecord, recipe: Recipe) -> bool:
