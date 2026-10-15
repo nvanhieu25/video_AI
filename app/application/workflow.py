@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.application.commands import SubmitJob
 from app.application.policy import BudgetPolicy, RetryAction, RetryPolicy
 from app.application.qc import Candidate, CandidateSelection, select_candidate
+from app.application.redaction import redact_text
 from app.domain.models import AssetOrigin, EpisodePlan, JobStatus, Shot, Storyboard
 from app.domain.ports import (
     ImageGenerator,
@@ -66,7 +67,7 @@ def stage_key(version_id: str, stage: str, target_id: str, payload: dict[str, ob
 def submit_job(command: SubmitJob, *, services: Services) -> UUID:
     recipe, recipe_hash = _load_recipe(command.recipe_id)
     created = services.jobs.create_job(
-        brief=command.brief,
+        brief=redact_text(command.brief),
         recipe_id=recipe.recipe_id,
         recipe_hash=recipe_hash,
         budget_cap=command.budget_cap or recipe.default_budget_cap,
@@ -330,7 +331,12 @@ def _run_render(services: Services, job: JobRecord, plan: EpisodePlan) -> None:
     flagged = _timeline_has_flags(services, job, plan)
     status = JobStatus.delivered_with_flags if flagged else JobStatus.delivered
     services.jobs.set_status(job.version_id, status)
-    services.jobs.record_event(job.version_id, "job.delivered", {"status": status.value})
+    current = services.jobs.get_job(job.job_id)
+    services.jobs.record_event(
+        job.version_id,
+        "job.delivered",
+        {"status": status.value, "cost": current.spent, "flags": flagged},
+    )
 
 
 def _timeline_inputs(

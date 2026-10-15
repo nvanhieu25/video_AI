@@ -13,6 +13,10 @@ def client(monkeypatch):
     return TestClient(create_app())
 
 
+def test_ready_endpoint_checks_the_database(client):
+    assert client.get("/ready").json() == {"status": "ready"}
+
+
 def test_health_endpoint_reports_application_name(client):
     assert client.get("/health").json() == {
         "status": "ok",

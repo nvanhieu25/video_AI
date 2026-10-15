@@ -8,6 +8,7 @@ from sqlalchemy import select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
+from app.application.redaction import redact
 from app.domain.models import AssetOrigin, JobStatus, TaskStatus
 from app.infrastructure.orm import ArtifactRow, AttemptRow, EventRow, JobRow, JobVersionRow, TaskRow
 
@@ -228,12 +229,15 @@ class JobRepository:
 
     def record_event(self, version_id: UUID, kind: str, payload: dict[str, object]) -> UUID:
         event_id = uuid4()
+        cleaned = redact(payload)
+        if not isinstance(cleaned, dict):
+            cleaned = {"value": cleaned}
         self.session.add(
             EventRow(
                 id=str(event_id),
                 version_id=str(version_id),
                 kind=kind,
-                payload=payload,
+                payload=cleaned,
                 created_at=_now(),
             )
         )

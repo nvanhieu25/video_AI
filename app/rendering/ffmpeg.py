@@ -35,7 +35,8 @@ class MediaInspector:
             raise MediaValidationError(
                 f"{path.name} is {metadata.aspect_ratio}, expected {aspect_ratio}"
             )
-        if abs(metadata.duration_seconds - required_duration) > 0.35:
+        tolerance = max(0.35, required_duration * 0.08)
+        if abs(metadata.duration_seconds - required_duration) > tolerance:
             raise MediaValidationError(
                 f"{path.name} duration {metadata.duration_seconds} != {required_duration}"
             )

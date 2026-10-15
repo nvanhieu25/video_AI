@@ -3,7 +3,9 @@
 
 # Local databases and generated media
 *.db
+*.sqlite
 media/
+renders/
 
 # Large outputs
 clips/

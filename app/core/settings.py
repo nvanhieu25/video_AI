@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     database_url: str = ""
     service_name: str = "richesse-video"
     media_root: str = "media"
+    media_retention_days: int = 30
 
     model_config = SettingsConfigDict(
         env_file=None,

@@ -4,6 +4,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres/richesse
       MEDIA_ROOT: /media
+      MEDIA_RETENTION_DAYS: "30"
     volumes:
       - media:/media
     ports:
@@ -17,6 +18,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres/richesse
       MEDIA_ROOT: /media
+      MEDIA_RETENTION_DAYS: "30"
     volumes:
       - media:/media
     depends_on:
