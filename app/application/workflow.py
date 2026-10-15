@@ -7,6 +7,8 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.application.commands import SubmitJob
+from app.application.policy import BudgetPolicy, RetryAction, RetryPolicy
+from app.application.qc import Candidate, select_candidate
 from app.domain.models import AssetOrigin, EpisodePlan, JobStatus, Shot, Storyboard
 from app.domain.ports import (
     ImageGenerator,
@@ -105,11 +107,11 @@ def execute_task(services: Services, task: TaskRecord) -> None:
             raise RuntimeError("plan is missing")
         plan = EpisodePlan.model_validate(raw_plan)
         if task.kind == "reference":
-            _run_reference(services, job, plan, task)
+            _run_reference(services, job, recipe, plan, task)
         elif task.kind == "speech":
-            _run_speech(services, job, plan, task)
+            _run_speech(services, job, recipe, plan, task)
         elif task.kind == "video":
-            _run_video(services, job, task)
+            _run_video(services, job, recipe, task)
         elif task.kind == "render":
             _run_render(services, job, plan)
         else:
@@ -139,10 +141,23 @@ def _run_plan(services: Services, job: JobRecord, recipe: Recipe) -> None:
     services.jobs.record_event(job.version_id, "plan.completed", {"storyboards": len(plan.storyboards)})
 
 
-def _run_reference(services: Services, job: JobRecord, plan: EpisodePlan, task: TaskRecord) -> None:
+def _run_reference(
+    services: Services, job: JobRecord, recipe: Recipe, plan: EpisodePlan, task: TaskRecord
+) -> None:
     storyboard_id = _text(task.payload, "storyboard_id")
     role = _text(task.payload, "role")
     board = _board(plan, storyboard_id)
+    if not _can_generate(services, job, recipe):
+        _store_asset(
+            services,
+            job,
+            data=f"fallback-ref:{storyboard_id}:{role}".encode(),
+            media_type="image/png",
+            origin=AssetOrigin.fallback,
+            role=role,
+            lineage={"stage": "reference", "storyboard_id": storyboard_id, "role": role, "fallback": True},
+        )
+        return
     asset = services.images.generate(
         ImageRequest(
             storyboard_id=storyboard_id,
@@ -166,8 +181,26 @@ def _run_reference(services: Services, job: JobRecord, plan: EpisodePlan, task: 
     )
 
 
-def _run_speech(services: Services, job: JobRecord, plan: EpisodePlan, task: TaskRecord) -> None:
+def _run_speech(
+    services: Services, job: JobRecord, recipe: Recipe, plan: EpisodePlan, task: TaskRecord
+) -> None:
     shot = _shot(plan, _text(task.payload, "shot_id"))
+    if not _can_generate(services, job, recipe):
+        _store_asset(
+            services,
+            job,
+            data=f"fallback-speech:{shot.shot_id}".encode(),
+            media_type="audio/wav",
+            origin=AssetOrigin.fallback,
+            role="dialogue",
+            lineage={
+                "stage": "speech",
+                "shot_id": shot.shot_id,
+                "duration_seconds": "1.00",
+                "fallback": True,
+            },
+        )
+        return
     spoken = services.speech.synthesize(
         SpeechRequest(shot_id=shot.shot_id, text=shot.dialogue, idempotency_key=task.idempotency_key)
     )
@@ -190,11 +223,22 @@ def _run_speech(services: Services, job: JobRecord, plan: EpisodePlan, task: Tas
     )
 
 
-def _run_video(services: Services, job: JobRecord, task: TaskRecord) -> None:
+def _run_video(services: Services, job: JobRecord, recipe: Recipe, task: TaskRecord) -> None:
+    shot_id = _text(task.payload, "shot_id")
     existing = services.jobs.get_attempt_by_key(task.idempotency_key)
     if existing is not None and existing.external_task_id:
         external_task_id = existing.external_task_id
+    elif not _can_generate(services, job, recipe):
+        _store_fallback_clip(services, job, task)
+        return
     else:
+        started = _video_attempts(services, job, shot_id)
+        action = RetryPolicy(recipe.max_attempts_per_shot).next_action(
+            attempts_started=started, last_hard_pass=False
+        )
+        if action == RetryAction.fallback:
+            _store_fallback_clip(services, job, task)
+            return
         external_task_id = services.video.submit(
             VideoRequest(
                 shot_id=_text(task.payload, "shot_id"),
@@ -268,8 +312,97 @@ def _run_render(services: Services, job: JobRecord, plan: EpisodePlan) -> None:
             cost="0",
         )
     )
-    services.jobs.set_status(job.version_id, JobStatus.delivered)
-    services.jobs.record_event(job.version_id, "job.delivered", {"status": JobStatus.delivered.value})
+    flagged = _timeline_has_flags(services, job, plan)
+    status = JobStatus.delivered_with_flags if flagged else JobStatus.delivered
+    services.jobs.set_status(job.version_id, status)
+    services.jobs.record_event(job.version_id, "job.delivered", {"status": status.value})
+
+
+def _can_generate(services: Services, job: JobRecord, recipe: Recipe) -> bool:
+    current = services.jobs.get_job(job.job_id)
+    return BudgetPolicy().can_start_attempt(current, recipe.attempt_estimate)
+
+
+def _video_attempts(services: Services, job: JobRecord, shot_id: str) -> int:
+    return sum(
+        1
+        for attempt in services.jobs.list_attempts(job.version_id)
+        if attempt.stage == "video" and attempt.target_id == shot_id
+    )
+
+
+def _store_fallback_clip(services: Services, job: JobRecord, task: TaskRecord) -> None:
+    shot_id = _text(task.payload, "shot_id")
+    _store_asset(
+        services,
+        job,
+        data=f"fallback-clip:{shot_id}".encode(),
+        media_type="video/mp4",
+        origin=AssetOrigin.fallback,
+        role="clip",
+        lineage={
+            "stage": "video",
+            "shot_id": shot_id,
+            "storyboard_id": _text(task.payload, "storyboard_id"),
+            "hard_pass": True,
+            "soft_score": 0.0,
+            "fallback": True,
+        },
+    )
+
+
+def _store_asset(
+    services: Services,
+    job: JobRecord,
+    *,
+    data: bytes,
+    media_type: str,
+    origin: AssetOrigin,
+    role: str,
+    lineage: dict[str, object],
+) -> None:
+    asset = services.store.put_bytes(data, media_type, origin, role=role)
+    services.jobs.save_artifact(
+        ArtifactWrite(
+            version_id=job.version_id,
+            asset_id=asset.asset_id,
+            sha256=asset.sha256,
+            uri=asset.uri,
+            media_type=asset.media_type,
+            origin=origin,
+            role=role,
+            lineage=lineage,
+            cost="0",
+        )
+    )
+
+
+def _timeline_has_flags(services: Services, job: JobRecord, plan: EpisodePlan) -> bool:
+    artifacts = services.jobs.list_artifacts(job.version_id)
+    flagged = False
+    for board in plan.storyboards:
+        for shot in board.shots:
+            clips = [
+                artifact
+                for artifact in artifacts
+                if artifact.lineage.get("stage") == "video"
+                and artifact.lineage.get("shot_id") == shot.shot_id
+            ]
+            chosen = select_candidate(
+                [
+                    Candidate(
+                        shot_id=shot.shot_id,
+                        asset_id=artifact.asset_id,
+                        hard_pass=_as_bool(artifact.lineage.get("hard_pass")),
+                        soft_score=_as_float(artifact.lineage.get("soft_score")),
+                        fallback=_as_bool(artifact.lineage.get("fallback")),
+                    )
+                    for artifact in clips
+                ]
+            )
+            if chosen.fallback or chosen.low_confidence:
+                flagged = True
+    return flagged
 
 
 def _enqueue_ready(services: Services, job: JobRecord, recipe: Recipe, plan: EpisodePlan) -> None:
@@ -368,6 +501,16 @@ def _shot(plan: EpisodePlan, shot_id: str) -> Shot:
             if shot.shot_id == shot_id:
                 return shot
     raise KeyError(shot_id)
+
+
+def _as_bool(value: object) -> bool:
+    return value is True
+
+
+def _as_float(value: object) -> float:
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        return float(value)
+    return 0.0
 
 
 def _text(payload: dict[str, object], key: str) -> str:

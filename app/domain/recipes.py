@@ -23,6 +23,7 @@ class Recipe(BaseModel):
     target_duration_seconds: int = 120
     fallback: str = "reference_image_motion"
     max_attempts_per_shot: int = 2
+    attempt_estimate: str = "0.01"
     default_budget_cap: str | None = None
     product_closeup_requires_approved_asset: bool = True
     forbid_ai_branding: list[str] = []
